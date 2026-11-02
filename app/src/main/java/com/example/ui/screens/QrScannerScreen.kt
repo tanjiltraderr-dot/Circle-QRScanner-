@@ -1,7 +1,20 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -10,6 +23,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,13 +49,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ViewStream
-import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,8 +68,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,33 +85,98 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.example.data.model.QrScanTargetMode
 import com.example.data.model.ScreenDestination
 import com.example.ui.components.QrResultSheet
 import com.example.ui.theme.LaserCyan
 import com.example.ui.theme.LaserRed
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.QrGreen
 import com.example.ui.theme.Slate400
-import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate900
 import com.example.ui.viewmodel.ScanViewModel
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executors
 
+@androidx.annotation.OptIn(ExperimentalGetImage::class)
 @Composable
 fun QrScannerScreen(
     viewModel: ScanViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
 
     BackHandler {
         viewModel.navigateTo(ScreenDestination.HOME)
+    }
+
+    // Camera permission check and launcher
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Photo picker for scanning QR / Barcode from gallery
+    val galleryPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inputImage = InputImage.fromFilePath(context, uri)
+                val options = BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
+                    .build()
+                val scanner = BarcodeScanning.getClient(options)
+                scanner.process(inputImage)
+                    .addOnSuccessListener { barcodes ->
+                        if (barcodes.isNotEmpty()) {
+                            val first = barcodes.first()
+                            viewModel.onLiveBarcodeDetected(
+                                first.rawValue ?: "",
+                                first.format
+                            )
+                        } else {
+                            viewModel.showSnackbar("No barcode or QR code detected in selected image")
+                        }
+                    }
+                    .addOnFailureListener {
+                        viewModel.showSnackbar("Failed to read image from gallery")
+                    }
+            } catch (e: Exception) {
+                viewModel.showSnackbar("Error processing gallery image: ${e.message}")
+            }
+        }
     }
 
     val isBarcodeMode = uiState.qrScanTargetMode == QrScanTargetMode.BARCODE
@@ -117,11 +206,34 @@ fun QrScannerScreen(
         label = "viewfinderHeight"
     )
 
+    // Camera instance reference for controlling torch and zoom
+    var activeCamera by remember { mutableStateOf<Camera?>(null) }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraExecutor.shutdown()
+        }
+    }
+
+    // React to flashlight toggle
+    LaunchedEffect(uiState.isQrFlashOn) {
+        try {
+            activeCamera?.cameraControl?.enableTorch(uiState.isQrFlashOn)
+        } catch (_: Exception) {}
+    }
+
+    // React to zoom changes
+    LaunchedEffect(uiState.qrZoomLevel) {
+        try {
+            activeCamera?.cameraControl?.setZoomRatio(uiState.qrZoomLevel)
+        } catch (_: Exception) {}
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF070B14))
-            // Pinch-to-zoom gesture on the camera canvas
             .pointerInput(Unit) {
                 detectTransformGestures { _, _, zoom, _ ->
                     val newZoom = (uiState.qrZoomLevel * zoom).coerceIn(1.0f, 5.0f)
@@ -129,38 +241,170 @@ fun QrScannerScreen(
                 }
             }
     ) {
-        // Simulated Camera Background with Zoom Reaction
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = 1f + (uiState.qrZoomLevel - 1f) * 0.15f
-                    scaleY = 1f + (uiState.qrZoomLevel - 1f) * 0.15f
-                }
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Subtle camera sensor texture simulation
-                val step = 40f
-                for (x in 0..(size.width / step).toInt()) {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.02f),
-                        start = Offset(x * step, 0f),
-                        end = Offset(x * step, size.height),
-                        strokeWidth = 1f
+        // 1. Live CameraX Preview View
+        if (hasCameraPermission) {
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = PreviewView(ctx).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }
+
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        try {
+                            val cameraProvider = cameraProviderFuture.get()
+
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
+                            }
+
+                            // ML Kit Barcode Analyzer
+                            val barcodeFormats = if (isBarcodeMode) {
+                                intArrayOf(
+                                    Barcode.FORMAT_EAN_13,
+                                    Barcode.FORMAT_EAN_8,
+                                    Barcode.FORMAT_UPC_A,
+                                    Barcode.FORMAT_UPC_E,
+                                    Barcode.FORMAT_CODE_128,
+                                    Barcode.FORMAT_CODE_39,
+                                    Barcode.FORMAT_CODE_93,
+                                    Barcode.FORMAT_ITF,
+                                    Barcode.FORMAT_CODABAR,
+                                    Barcode.FORMAT_PDF417,
+                                    Barcode.FORMAT_AZTEC,
+                                    Barcode.FORMAT_DATA_MATRIX
+                                )
+                            } else {
+                                intArrayOf(Barcode.FORMAT_QR_CODE)
+                            }
+
+                            val options = BarcodeScannerOptions.Builder()
+                                .setBarcodeFormats(
+                                    barcodeFormats.first(),
+                                    *barcodeFormats.drop(1).toIntArray()
+                                )
+                                .build()
+
+                            val scanner = BarcodeScanning.getClient(options)
+
+                            val imageAnalysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+
+                            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                val mediaImage = imageProxy.image
+                                if (mediaImage != null && !uiState.showQrResultSheet) {
+                                    val image = InputImage.fromMediaImage(
+                                        mediaImage,
+                                        imageProxy.imageInfo.rotationDegrees
+                                    )
+                                    scanner.process(image)
+                                        .addOnSuccessListener { barcodes ->
+                                            if (barcodes.isNotEmpty() && !uiState.showQrResultSheet) {
+                                                val detected = barcodes.first()
+                                                val raw = detected.rawValue
+                                                if (!raw.isNullOrBlank()) {
+                                                    viewModel.onLiveBarcodeDetected(raw, detected.format)
+                                                }
+                                            }
+                                        }
+                                        .addOnCompleteListener {
+                                            imageProxy.close()
+                                        }
+                                } else {
+                                    imageProxy.close()
+                                }
+                            }
+
+                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                            cameraProvider.unbindAll()
+                            val boundCamera = cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                cameraSelector,
+                                preview,
+                                imageAnalysis
+                            )
+                            activeCamera = boundCamera
+
+                            // Sync initial zoom and torch
+                            boundCamera.cameraControl.setZoomRatio(uiState.qrZoomLevel)
+                            boundCamera.cameraControl.enableTorch(uiState.isQrFlashOn)
+
+                        } catch (exc: Exception) {
+                            android.util.Log.e("QrScanner", "Camera binding failed", exc)
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+
+                    previewView
+                },
+                update = {
+                    // Update camera when mode switches
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Permission Request Fallback Screen
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        tint = QrGreen,
+                        modifier = Modifier.size(36.dp)
                     )
                 }
-                for (y in 0..(size.height / step).toInt()) {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.02f),
-                        start = Offset(0f, y * step),
-                        end = Offset(size.width, y * step),
-                        strokeWidth = 1f
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Camera Permission Required",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        color = PureWhite,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Circle Scanner requires camera access to scan QR codes and barcodes in real-time.",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = Slate400,
+                        textAlign = TextAlign.Center
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    colors = ButtonDefaults.buttonColors(containerColor = QrGreen),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("request_camera_perm_button")
+                ) {
+                    Text(
+                        text = "Grant Camera Permission",
+                        color = Slate900,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
 
-        // Main Viewfinder Canvas with Cutout and Glowing Corners
+        // 2. Main Viewfinder Canvas with Cutout and Glowing Corners
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val width = constraints.maxWidth.toFloat()
             val height = constraints.maxHeight.toFloat()
@@ -175,7 +419,7 @@ fun QrScannerScreen(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 // Dimmed surrounding overlay
                 drawRect(
-                    color = Color.Black.copy(alpha = if (uiState.isQrFlashOn) 0.45f else 0.72f),
+                    color = Color.Black.copy(alpha = if (uiState.isQrFlashOn) 0.38f else 0.65f),
                     size = size
                 )
 
@@ -307,16 +551,7 @@ fun QrScannerScreen(
             }
         }
 
-        // Flashlight Light simulation effect
-        if (uiState.isQrFlashOn) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.08f))
-            )
-        }
-
-        // Top Navigation & Flashlight Bar
+        // 3. Top Navigation & Flashlight Bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -441,18 +676,16 @@ fun QrScannerScreen(
                         )
                     }
 
-                    // Import from gallery button
+                    // Import from gallery button (Active photo picker)
                     Box(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.55f))
                             .clickable {
-                                if (isBarcodeMode) {
-                                    viewModel.simulateBarcodeDetected("8901030865421", "EAN-13")
-                                } else {
-                                    viewModel.simulateQrDetected("https://circlescanner.app/shared/doc-2026", "URL")
-                                }
+                                galleryPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
                             }
                             .testTag("qr_gallery_import"),
                         contentAlignment = Alignment.Center
@@ -468,7 +701,7 @@ fun QrScannerScreen(
             }
         }
 
-        // Subtitle Guidance & Interactive Test Simulator Triggers
+        // 4. Subtitle Guidance & Quick Demo Triggers
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -477,9 +710,9 @@ fun QrScannerScreen(
         ) {
             Text(
                 text = if (isBarcodeMode) {
-                    "Align barcode between the horizontal guidelines"
+                    "Point camera at barcode inside horizontal box"
                 } else {
-                    "Align QR code inside the targeting frame to scan"
+                    "Point camera at QR code to scan automatically"
                 },
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = Color.White.copy(alpha = 0.9f),
@@ -490,7 +723,7 @@ fun QrScannerScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Interactive test triggers simulating live detection
+            // Quick Scan Preset Buttons (for instant testing)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isBarcodeMode) {
                     Surface(
@@ -499,7 +732,7 @@ fun QrScannerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                viewModel.simulateBarcodeDetected("8901030865421", "EAN-13")
+                                viewModel.onLiveBarcodeDetected("8901030865421", Barcode.FORMAT_EAN_13)
                             }
                     ) {
                         Row(
@@ -508,7 +741,7 @@ fun QrScannerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(Icons.Filled.ViewStream, contentDescription = null, tint = LaserCyan, modifier = Modifier.size(14.dp))
-                            Text("Simulate EAN-13", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("EAN-13 Sample", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -518,7 +751,7 @@ fun QrScannerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                viewModel.simulateBarcodeDetected("012345678905", "UPC-A")
+                                viewModel.onLiveBarcodeDetected("012345678905", Barcode.FORMAT_UPC_A)
                             }
                     ) {
                         Row(
@@ -527,7 +760,7 @@ fun QrScannerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(Icons.Filled.ViewStream, contentDescription = null, tint = LaserRed, modifier = Modifier.size(14.dp))
-                            Text("Simulate UPC-A", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("UPC-A Sample", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 } else {
@@ -537,7 +770,7 @@ fun QrScannerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                viewModel.simulateQrDetected("https://circlescanner.app/preview/doc-3921", "URL")
+                                viewModel.onLiveBarcodeDetected("https://circlescanner.app/preview/doc-3921", Barcode.FORMAT_QR_CODE)
                             }
                     ) {
                         Row(
@@ -546,7 +779,7 @@ fun QrScannerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(Icons.Filled.QrCode, contentDescription = null, tint = QrGreen, modifier = Modifier.size(14.dp))
-                            Text("Simulate URL", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Website URL", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -556,7 +789,7 @@ fun QrScannerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                viewModel.simulateQrDetected("WIFI:S:CircleOffice_HQ;T:WPA;P:Security2026!;;", "WIFI")
+                                viewModel.onLiveBarcodeDetected("WIFI:S:CircleOffice_HQ;T:WPA;P:Security2026!;;", Barcode.FORMAT_QR_CODE)
                             }
                     ) {
                         Row(
@@ -564,15 +797,15 @@ fun QrScannerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Filled.Wifi, contentDescription = null, tint = LaserCyan, modifier = Modifier.size(14.dp))
-                            Text("Simulate Wi-Fi", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.QrCode, contentDescription = null, tint = LaserCyan, modifier = Modifier.size(14.dp))
+                            Text("Wi-Fi Code", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
         }
 
-        // Bottom View: Ultra-Smooth Native-Style Zoom Controls
+        // 5. Bottom View: Ultra-Smooth Native-Style Zoom Controls
         Surface(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = Color(0xFF111827).copy(alpha = 0.96f),

@@ -1,6 +1,18 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -37,12 +49,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +65,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,17 +82,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.example.data.model.CameraMode
 import com.example.data.model.ScreenDestination
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.Slate400
+import com.example.ui.theme.Slate900
 import com.example.ui.viewmodel.ScanViewModel
+import java.io.File
 
 @Composable
 fun DocumentScannerScreen(
@@ -84,8 +106,51 @@ fun DocumentScannerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
     var shutterClicked by remember { mutableStateOf(false) }
+
+    // Camera permission check and launcher
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Photo picker for importing documents from gallery
+    val galleryPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.triggerShutterCapture(photoUri = uri.toString())
+        }
+    }
+
+    // References to active camera and ImageCapture use-case
+    var activeCamera by remember { mutableStateOf<Camera?>(null) }
+    var imageCaptureUseCase by remember { mutableStateOf<ImageCapture?>(null) }
+
+    // React to flashlight toggle
+    LaunchedEffect(uiState.isDocFlashOn) {
+        try {
+            activeCamera?.cameraControl?.enableTorch(uiState.isDocFlashOn)
+        } catch (_: Exception) {}
+    }
 
     val shutterScale by animateFloatAsState(
         targetValue = if (shutterClicked) 0.86f else 1.0f,
@@ -124,9 +189,122 @@ fun DocumentScannerScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF090D16)) // Dark camera viewport
+            .background(Color(0xFF090D16))
     ) {
-        // 1. Camera Viewfinder with Document Alignment Guides & Corner Brackets
+        // 1. Live CameraX Preview View
+        if (hasCameraPermission) {
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = PreviewView(ctx).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }
+
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        try {
+                            val cameraProvider = cameraProviderFuture.get()
+
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
+                            }
+
+                            val imageCapture = ImageCapture.Builder()
+                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .build()
+                            imageCaptureUseCase = imageCapture
+
+                            val cameraSelector = if (uiState.isFrontCamera) {
+                                CameraSelector.DEFAULT_FRONT_CAMERA
+                            } else {
+                                CameraSelector.DEFAULT_BACK_CAMERA
+                            }
+
+                            cameraProvider.unbindAll()
+                            val boundCamera = cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                cameraSelector,
+                                preview,
+                                imageCapture
+                            )
+                            activeCamera = boundCamera
+
+                            boundCamera.cameraControl.enableTorch(uiState.isDocFlashOn)
+
+                        } catch (exc: Exception) {
+                            android.util.Log.e("DocScanner", "Camera binding failed", exc)
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+
+                    previewView
+                },
+                update = {
+                    // Update camera binding if camera flipped
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Permission Request Fallback Screen
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        tint = AccentBlue,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Camera Permission Required",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        color = PureWhite,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Circle Scanner requires camera access to capture documents and receipts in high definition.",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = Slate400,
+                        textAlign = TextAlign.Center
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("request_camera_perm_doc_button")
+                ) {
+                    Text(
+                        text = "Grant Camera Permission",
+                        color = PureWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // 2. Camera Viewfinder with Document Alignment Guides & Corner Brackets
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val canvasWidth = constraints.maxWidth.toFloat()
             val canvasHeight = constraints.maxHeight.toFloat()
@@ -149,7 +327,7 @@ fun DocumentScannerScreen(
                 }
 
                 // Semi-transparent shaded outer mask outside document guide
-                val maskColor = Color.Black.copy(alpha = 0.42f)
+                val maskColor = Color.Black.copy(alpha = 0.38f)
                 drawRect(maskColor, Offset(0f, 0f), Size(size.width, top))
                 drawRect(maskColor, Offset(0f, bottom), Size(size.width, size.height - bottom))
                 drawRect(maskColor, Offset(0f, top), Size(left, bottom - top))
@@ -236,7 +414,7 @@ fun DocumentScannerScreen(
             }
         }
 
-        // 2. Top Bar: Back, Page Count, Flashlight, Camera Switch, Grid Toggle
+        // 3. Top Bar: Back, Page Count, Flashlight, Camera Switch, Grid Toggle
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -345,7 +523,7 @@ fun DocumentScannerScreen(
             }
         }
 
-        // 3. Bottom Camera Controls: Mode Selector + Center Big Shutter + Gallery Import
+        // 4. Bottom Camera Controls: Mode Selector + Center Big Shutter + Gallery Import
         Surface(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = Color(0xFF0F172A).copy(alpha = 0.96f),
@@ -413,7 +591,7 @@ fun DocumentScannerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Batch / Multi-Page Pill (or placeholder indicator)
+                    // Left: Batch / Multi-Page Pill
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = Color.White.copy(alpha = 0.10f),
@@ -454,7 +632,30 @@ fun DocumentScannerScreen(
                             .background(Color.White.copy(alpha = 0.18f))
                             .clickable {
                                 shutterClicked = true
-                                viewModel.triggerShutterCapture()
+                                val capture = imageCaptureUseCase
+                                if (capture != null && hasCameraPermission) {
+                                    val photoFile = File(
+                                        context.cacheDir,
+                                        "scan_doc_${System.currentTimeMillis()}.jpg"
+                                    )
+                                    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                                    capture.takePicture(
+                                        outputOptions,
+                                        ContextCompat.getMainExecutor(context),
+                                        object : ImageCapture.OnImageSavedCallback {
+                                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                                viewModel.triggerShutterCapture(photoUri = photoFile.absolutePath)
+                                            }
+
+                                            override fun onError(exception: ImageCaptureException) {
+                                                // Graceful fallback to processing simulation
+                                                viewModel.triggerShutterCapture(photoUri = null)
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    viewModel.triggerShutterCapture(photoUri = null)
+                                }
                             }
                             .testTag("doc_shutter_button"),
                         contentAlignment = Alignment.Center
@@ -476,15 +677,16 @@ fun DocumentScannerScreen(
                         }
                     }
 
-                    // Right: Gallery Import Button with preview icon
+                    // Right: Gallery Import Button
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = Color.White.copy(alpha = 0.10f),
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .clickable {
-                                viewModel.triggerShutterCapture()
-                                viewModel.showSnackbar("Photo imported from Gallery")
+                                galleryPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
                             }
                             .testTag("gallery_import_btn")
                     ) {
@@ -512,7 +714,7 @@ fun DocumentScannerScreen(
             }
         }
 
-        // 4. Processing Overlay (Crucial Step: Triggered instantly on Shutter tap)
+        // 5. Processing Overlay (Triggered instantly on Shutter tap)
         AnimatedVisibility(
             visible = uiState.isProcessingCapture,
             enter = fadeIn(animationSpec = tween(150)),

@@ -43,6 +43,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -260,6 +263,7 @@ fun CropEditorScreen(
             ) {
                 // Interactive Cropper Canvas
                 DocumentCropperCanvas(
+                    photoUri = uiState.activeCapturedPhotoUri,
                     corners = uiState.cropCorners,
                     rotationDegrees = uiState.activeEditorRotation,
                     filterApplied = uiState.activeEditorFilter,
@@ -469,6 +473,7 @@ fun CropEditorScreen(
 
 @Composable
 private fun DocumentCropperCanvas(
+    photoUri: String? = null,
     corners: List<Offset>,
     rotationDegrees: Int,
     filterApplied: String,
@@ -537,18 +542,26 @@ private fun DocumentCropperCanvas(
                     }
                 }
         ) {
-            // Simulated high-clarity document layout lines & header
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp)
-            ) {
-                // Header Bar simulation
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (photoUri != null) {
+                AsyncImage(
+                    model = photoUri,
+                    contentDescription = "Captured Document",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Simulated high-clarity document layout lines & header
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp)
                 ) {
+                    // Header Bar simulation
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     Box(
                         modifier = Modifier
                             .width(80.dp)
@@ -668,6 +681,43 @@ private fun DocumentCropperCanvas(
                     }
                 }
             }
+        }
+
+            // Render Digital Signature Stamp over photo if photo is present
+            if (photoUri != null && signatureText != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = AccentBlue.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = signatureText,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontStyle = FontStyle.Italic,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentBlue,
+                                fontSize = 15.sp
+                            )
+                        )
+                        Text(
+                            text = "Digitally Signed",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                color = AccentGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                }
+            }
+
 
             // Canvas for freehand markup pen strokes
             Canvas(modifier = Modifier.fillMaxSize()) {

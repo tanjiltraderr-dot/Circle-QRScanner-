@@ -55,6 +55,7 @@ data class UiState(
     val currentDocFilter: String = "Magic Color",
     val docPageCount: Int = 1,
     val capturedDocPages: List<String> = emptyList(),
+    val activeCapturedPhotoUri: String? = null,
     // Auto-crop quad corners normalized (0f to 1f)
     val cropCorners: List<Offset> = listOf(
         Offset(0.12f, 0.15f), // Top-Left
@@ -198,6 +199,69 @@ class ScanViewModel(
         _uiState.update { it.copy(qrZoomLevel = (it.qrZoomLevel + delta).coerceIn(1.0f, 5.0f)) }
     }
 
+    private var lastScannedCode: String? = null
+    private var lastScannedTimestamp: Long = 0L
+
+    fun onLiveBarcodeDetected(rawValue: String, formatCode: Int) {
+        val now = System.currentTimeMillis()
+        if (_uiState.value.showQrResultSheet) return
+        if (rawValue == lastScannedCode && (now - lastScannedTimestamp) < 3000L) return
+
+        lastScannedCode = rawValue
+        lastScannedTimestamp = now
+
+        val timeString = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
+        val isUrl = rawValue.startsWith("http://", ignoreCase = true) || rawValue.startsWith("https://", ignoreCase = true)
+        val isWifi = rawValue.startsWith("WIFI:", ignoreCase = true)
+        val isEmail = rawValue.startsWith("mailto:", ignoreCase = true)
+        val isPhone = rawValue.startsWith("tel:", ignoreCase = true)
+
+        val formatName = when (formatCode) {
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE -> "QR Code"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 -> "EAN-13"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 -> "EAN-8"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A -> "UPC-A"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E -> "UPC-E"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_CODE_128 -> "Code 128"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_CODE_39 -> "Code 39"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_CODE_93 -> "Code 93"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_PDF417 -> "PDF-417"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_AZTEC -> "Aztec"
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_DATA_MATRIX -> "Data Matrix"
+            else -> "Barcode"
+        }
+
+        val type = when {
+            formatCode == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE -> when {
+                isUrl -> "URL"
+                isWifi -> "WIFI"
+                isEmail -> "EMAIL"
+                isPhone -> "PHONE"
+                else -> "TEXT"
+            }
+            else -> "BARCODE"
+        }
+
+        val item = ScannedItem(
+            id = UUID.randomUUID().toString(),
+            title = if (type == "URL") rawValue else "$formatName: ${rawValue.take(28)}",
+            type = ScanType.QR_CODE,
+            timestamp = "Just now ($timeString)",
+            pageCount = 1,
+            fileSize = "14 KB",
+            content = rawValue,
+            qrPayloadType = type,
+            isFavorite = false
+        )
+
+        _uiState.update {
+            it.copy(
+                activeQrResult = item,
+                showQrResultSheet = true
+            )
+        }
+    }
+
     fun simulateQrDetected(qrText: String = "https://circlescanner.app/preview/doc-994", type: String = "URL") {
         val now = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
         val item = ScannedItem(
@@ -305,13 +369,14 @@ class ScanViewModel(
         showSnackbar("Switched to $cameraName")
     }
 
-    // Trigger Shutter: triggers loading/processing overlay -> AI edge detection & perspective straightening -> smooth transition to Crop/Editor
-    fun triggerShutterCapture() {
+    // Trigger Shutter: captures photo -> triggers loading/processing overlay -> AI edge detection & perspective straightening -> smooth transition to Crop/Editor
+    fun triggerShutterCapture(photoUri: String? = null) {
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isProcessingCapture = true,
-                    processingMessage = "Processing Document..."
+                    processingMessage = "Processing Document...",
+                    activeCapturedPhotoUri = photoUri
                 )
             }
             delay(350)
@@ -330,7 +395,8 @@ class ScanViewModel(
             val newPageData = CapturedPageData(
                 pageNumber = currentCount,
                 title = "Page $currentCount",
-                filterApplied = _uiState.value.currentDocFilter
+                filterApplied = _uiState.value.currentDocFilter,
+                imageUri = photoUri
             )
 
             // Auto-detected straightened document quad

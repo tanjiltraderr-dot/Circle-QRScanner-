@@ -23,14 +23,16 @@ data class ScannedItem(
     val filterApplied: String = "Magic Color",
     val thumbnailRes: Int? = null,
     val customNotes: String = "",
-    val pdfFilePath: String? = null
+    val pdfFilePath: String? = null,
+    val imageUri: String? = null
 )
 
 data class CapturedPageData(
     val pageNumber: Int,
     val title: String = "Page $pageNumber",
     val filterApplied: String = "Magic Color",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val imageUri: String? = null
 )
 
 data class CategoryItem(
