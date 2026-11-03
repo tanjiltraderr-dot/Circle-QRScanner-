@@ -57,5 +57,33 @@ class ExampleRobolectricTest {
     assertEquals(0, fallback.rotationDegrees)
     assertTrue("Confidence should be positive", fallback.confidence > 0.8f)
   }
+
+  @Test
+  fun `qr camera and zoom state methods update appropriately`() {
+    val viewModel = com.example.ui.viewmodel.ScanViewModel()
+    assertFalse("Default camera should be rear", viewModel.uiState.value.isQrFrontCamera)
+
+    viewModel.switchQrCamera()
+    assertTrue("Camera should switch to front", viewModel.uiState.value.isQrFrontCamera)
+
+    viewModel.switchQrCamera()
+    assertFalse("Camera should switch back to rear", viewModel.uiState.value.isQrFrontCamera)
+
+    assertEquals(1.0f, viewModel.uiState.value.qrZoomLevel, 0.01f)
+    viewModel.adjustQrZoom(0.5f)
+    assertEquals(1.5f, viewModel.uiState.value.qrZoomLevel, 0.01f)
+
+    viewModel.adjustQrZoom(-1.0f)
+    assertEquals(1.0f, viewModel.uiState.value.qrZoomLevel, 0.01f) // Should clamp at min 1.0f
+
+    viewModel.setQrScanTargetMode(com.example.data.model.QrScanTargetMode.BARCODE)
+    assertEquals(com.example.data.model.QrScanTargetMode.BARCODE, viewModel.uiState.value.qrScanTargetMode)
+  }
+
+  @Test
+  fun `google drive scanner helper builds valid options`() {
+    val options = com.example.util.GoogleDriveScannerHelper.buildScannerOptions()
+    org.junit.Assert.assertNotNull(options)
+  }
 }
 

@@ -108,12 +108,12 @@ fun QuickScanBottomSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Action 1: Document Scanner
+            // Action 1: Document Scanner (Google Drive)
             QuickActionTile(
-                title = "Document Scanner",
-                subtitle = "Camera capture with auto-crop & multi-page",
+                title = "Google Drive Scanner",
+                subtitle = "Official Google Drive scanner with auto-crop & PDF",
                 icon = Icons.Filled.CameraAlt,
-                badge = "POPULAR",
+                badge = "GOOGLE DRIVE",
                 iconBg = Color(0xFFEFF6FF),
                 iconTint = AccentBlue,
                 onClick = {

@@ -238,7 +238,7 @@ fun MainBannerCards(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Document Scanner",
+                        text = "Google Drive Scanner",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
@@ -255,7 +255,7 @@ fun MainBannerCards(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "HD Camera & Multi-Page",
+                            text = "Auto-Crop, Straighten & PDF",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 11.sp,
                                 color = TextMuted

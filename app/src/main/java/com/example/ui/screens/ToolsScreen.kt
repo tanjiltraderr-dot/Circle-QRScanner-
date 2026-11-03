@@ -117,8 +117,8 @@ fun ToolsScreen(
             // Section 1: Capture & Scanning Tools
             ToolSectionHeader(title = "Capture & Scanning")
             ToolRowItem(
-                title = "Smart Document Scanner",
-                subtitle = "Auto-edge detection, perspective warp & filters",
+                title = "Google Drive Document Scanner",
+                subtitle = "Official Google Drive document scanning engine & PDF",
                 icon = Icons.Filled.Scanner,
                 iconTint = AccentBlue,
                 iconBg = Color(0xFFEFF6FF),

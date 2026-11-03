@@ -44,6 +44,7 @@ data class UiState(
     
     // QR Scanner State
     val isQrFlashOn: Boolean = false,
+    val isQrFrontCamera: Boolean = false,
     val qrZoomLevel: Float = 1.0f,
     val qrScanTargetMode: QrScanTargetMode = QrScanTargetMode.QR_CODE,
     val activeQrResult: ScannedItem? = null,
@@ -191,6 +192,10 @@ class ScanViewModel(
         _uiState.update { it.copy(isQrFlashOn = !it.isQrFlashOn) }
     }
 
+    fun switchQrCamera() {
+        _uiState.update { it.copy(isQrFrontCamera = !it.isQrFrontCamera) }
+    }
+
     fun setQrScanTargetMode(mode: QrScanTargetMode) {
         _uiState.update { it.copy(qrScanTargetMode = mode) }
     }
@@ -201,6 +206,59 @@ class ScanViewModel(
 
     fun adjustQrZoom(delta: Float) {
         _uiState.update { it.copy(qrZoomLevel = (it.qrZoomLevel + delta).coerceIn(1.0f, 5.0f)) }
+    }
+
+    fun handleGoogleDriveScanResult(
+        context: Context,
+        pdfUri: android.net.Uri?,
+        pageUris: List<android.net.Uri>?,
+        pageCount: Int
+    ) {
+        viewModelScope.launch {
+            val now = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
+            val dateStamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+            val title = "Scan_$dateStamp"
+
+            var savedPdfPath: String? = null
+            if (pdfUri != null) {
+                try {
+                    val destFile = File(context.filesDir, "$title.pdf")
+                    context.contentResolver.openInputStream(pdfUri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    savedPdfPath = destFile.absolutePath
+                } catch (e: Exception) {
+                    android.util.Log.e("ScanViewModel", "Failed to cache PDF from Google Drive scanner: ${e.message}")
+                }
+            }
+
+            val count = if (pageCount > 0) pageCount else (pageUris?.size ?: 1)
+            val firstImage = pageUris?.firstOrNull()?.toString()
+
+            val newItem = ScannedItem(
+                id = UUID.randomUUID().toString(),
+                title = "$title.pdf",
+                type = if (savedPdfPath != null) ScanType.PDF_FILE else ScanType.DOCUMENT,
+                timestamp = "Just now ($now)",
+                pageCount = count,
+                fileSize = "${String.format(Locale.US, "%.1f", 0.6f * count)} MB",
+                content = "Document scanned with Google Drive Scanner engine. Multi-page perspective straightened and enhanced.",
+                filterApplied = "Magic Color",
+                pdfFilePath = savedPdfPath,
+                imageUri = firstImage,
+                isFavorite = false
+            )
+            repository.addItem(newItem)
+            _uiState.update {
+                it.copy(
+                    selectedItem = newItem,
+                    currentDestination = ScreenDestination.DOCUMENT_DETAIL
+                )
+            }
+            showSnackbar("Document saved from Google Drive Scanner!")
+        }
     }
 
     private var lastScannedCode: String? = null

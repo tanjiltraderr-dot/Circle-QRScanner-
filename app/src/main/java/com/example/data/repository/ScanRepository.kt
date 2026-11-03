@@ -36,7 +36,7 @@ class ScanRepository {
 
     companion object {
         fun getInitialCategories(): List<CategoryItem> = listOf(
-            CategoryItem("cat_smart_scan", "Smart Scanner", "scanner", "AI", "Auto-crop edge detection"),
+            CategoryItem("cat_smart_scan", "Google Drive Scanner", "scanner", "HOT", "Google Drive official engine"),
             CategoryItem("cat_pdf_tools", "PDF Tools", "picture_as_pdf", "HOT", "Merge, split & lock"),
             CategoryItem("cat_import_img", "Import Image", "add_photo_alternate", null, "From photo gallery"),
             CategoryItem("cat_import_file", "Import File", "folder_open", null, "PDF, DOCX, TXT"),
