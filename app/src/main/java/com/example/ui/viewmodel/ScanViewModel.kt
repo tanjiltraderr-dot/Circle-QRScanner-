@@ -96,7 +96,8 @@ data class UiState(
 )
 
 class ScanViewModel(
-    private val repository: ScanRepository = ScanRepository()
+    private val repository: ScanRepository = ScanRepository(),
+    private val geminiRepository: com.example.data.repository.GeminiRepository = com.example.data.repository.GeminiRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UiState())
@@ -372,8 +373,6 @@ class ScanViewModel(
         showSnackbar("Switched to $cameraName")
     }
 
-    private val geminiAnalyzer = com.example.util.GeminiDocumentAnalyzer()
-
     // Trigger Shutter: captures photo -> analyzes corners with Gemini AI (ignoring bed/table) -> crops & straightens perspective -> applies clarity filter -> opens Crop/Editor
     fun triggerShutterCapture(photoUri: String? = null, context: Context? = null) {
         viewModelScope.launch {
@@ -391,6 +390,7 @@ class ScanViewModel(
                 Offset(0.92f, 0.88f),
                 Offset(0.08f, 0.88f)
             )
+            var detectedRotation = 0
             var finalPhotoUri = photoUri
 
             if (photoUri != null && context != null) {
@@ -411,9 +411,11 @@ class ScanViewModel(
                     }
 
                     if (bitmap != null) {
-                        // 1. Gemini AI boundary detection (ignores bed, table, clutter)
-                        val aiResult = geminiAnalyzer.analyzeDocumentBounds(bitmap)
-                        detectedCorners = aiResult.corners
+                        // 1. Gemini AI auto-crop & deskew boundary detection (ignores bed, table, clutter)
+                        val aiResult = geminiRepository.getAutoCropAndDeskewInstructions(bitmap)
+                        val instructions = aiResult.getOrElse { geminiRepository.getFallbackCropInstructions(bitmap) }
+                        detectedCorners = instructions.corners
+                        detectedRotation = instructions.rotationDegrees
 
                         _uiState.update {
                             it.copy(processingMessage = "Cropping background & straightening perspective...")
@@ -468,7 +470,7 @@ class ScanViewModel(
                     cropCorners = detectedCorners,
                     activeCapturedPhotoUri = finalPhotoUri,
                     activeEditorFilter = it.currentDocFilter,
-                    activeEditorRotation = 0,
+                    activeEditorRotation = detectedRotation,
                     currentDestination = ScreenDestination.CROP_EDITOR
                 )
             }

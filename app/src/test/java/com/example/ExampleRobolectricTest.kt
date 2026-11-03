@@ -42,4 +42,20 @@ class ExampleRobolectricTest {
     viewModel.dismissPdfNameDialog()
     assertFalse("PDF dialog should be closed", viewModel.uiState.value.showPdfNameDialog)
   }
+
+  @Test
+  fun `gemini repository fallback instructions provide valid normalized boundaries`() {
+    val geminiRepo = com.example.data.repository.GeminiRepository()
+    val fallback = geminiRepo.getFallbackCropInstructions()
+
+    assertEquals(4, fallback.corners.size)
+    assertTrue("TopLeft X must be >= 0", fallback.topLeft.x >= 0.0f)
+    assertTrue("TopLeft Y must be >= 0", fallback.topLeft.y >= 0.0f)
+    assertTrue("TopRight X must be > TopLeft X", fallback.topRight.x > fallback.topLeft.x)
+    assertTrue("BottomRight Y must be > TopRight Y", fallback.bottomRight.y > fallback.topRight.y)
+    assertTrue("BottomLeft Y must be > TopLeft Y", fallback.bottomLeft.y > fallback.topLeft.y)
+    assertEquals(0, fallback.rotationDegrees)
+    assertTrue("Confidence should be positive", fallback.confidence > 0.8f)
+  }
 }
+
