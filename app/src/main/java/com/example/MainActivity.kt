@@ -31,6 +31,8 @@ import com.example.ui.viewmodel.ScanViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Configure App Check for Firebase AI Logic
+        com.example.util.configureAppCheck(this, intent)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {

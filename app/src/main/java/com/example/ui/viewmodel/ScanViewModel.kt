@@ -15,6 +15,9 @@ import com.example.data.repository.ScanRepository
 import com.example.util.PdfGenerationResult
 import com.example.util.PdfGenerator
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -369,25 +372,81 @@ class ScanViewModel(
         showSnackbar("Switched to $cameraName")
     }
 
-    // Trigger Shutter: captures photo -> triggers loading/processing overlay -> AI edge detection & perspective straightening -> smooth transition to Crop/Editor
-    fun triggerShutterCapture(photoUri: String? = null) {
+    private val geminiAnalyzer = com.example.util.GeminiDocumentAnalyzer()
+
+    // Trigger Shutter: captures photo -> analyzes corners with Gemini AI (ignoring bed/table) -> crops & straightens perspective -> applies clarity filter -> opens Crop/Editor
+    fun triggerShutterCapture(photoUri: String? = null, context: Context? = null) {
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isProcessingCapture = true,
-                    processingMessage = "Processing Document...",
+                    processingMessage = "Analyzing document with Gemini AI...",
                     activeCapturedPhotoUri = photoUri
                 )
             }
-            delay(350)
-            _uiState.update {
-                it.copy(processingMessage = "Detecting document edges with AI...")
+
+            var detectedCorners = listOf(
+                Offset(0.08f, 0.10f),
+                Offset(0.92f, 0.10f),
+                Offset(0.92f, 0.88f),
+                Offset(0.08f, 0.88f)
+            )
+            var finalPhotoUri = photoUri
+
+            if (photoUri != null && context != null) {
+                try {
+                    _uiState.update {
+                        it.copy(processingMessage = "Detecting notebook boundaries with Gemini AI...")
+                    }
+
+                    // Decode photo bitmap
+                    val bitmap = withContext(Dispatchers.IO) {
+                        if (photoUri.startsWith("content://")) {
+                            context.contentResolver.openInputStream(android.net.Uri.parse(photoUri))?.use {
+                                android.graphics.BitmapFactory.decodeStream(it)
+                            }
+                        } else {
+                            android.graphics.BitmapFactory.decodeFile(photoUri)
+                        }
+                    }
+
+                    if (bitmap != null) {
+                        // 1. Gemini AI boundary detection (ignores bed, table, clutter)
+                        val aiResult = geminiAnalyzer.analyzeDocumentBounds(bitmap)
+                        detectedCorners = aiResult.corners
+
+                        _uiState.update {
+                            it.copy(processingMessage = "Cropping background & straightening perspective...")
+                        }
+
+                        // 2. Crop, remove background clutter (bed, table), and perspective straighten
+                        val croppedBitmap = withContext(Dispatchers.Default) {
+                            com.example.util.DocumentProcessor.cropAndStraightenDocument(bitmap, detectedCorners)
+                        }
+
+                        // 3. Enhance document readability without altering original text
+                        val enhancedBitmap = withContext(Dispatchers.Default) {
+                            com.example.util.DocumentProcessor.enhanceDocumentClarity(
+                                croppedBitmap,
+                                _uiState.value.currentDocFilter
+                            )
+                        }
+
+                        // 4. Save clean processed document
+                        val outputFile = File(context.cacheDir, "gemini_scan_${System.currentTimeMillis()}.jpg")
+                        com.example.util.DocumentProcessor.saveBitmapToFile(enhancedBitmap, outputFile)
+                        finalPhotoUri = outputFile.absolutePath
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ScanViewModel", "AI Processing error: ${e.message}")
+                }
+            } else {
+                delay(400)
+                _uiState.update {
+                    it.copy(processingMessage = "Straightening perspective & auto-cropping...")
+                }
+                delay(300)
             }
-            delay(400)
-            _uiState.update {
-                it.copy(processingMessage = "Straightening perspective & auto-cropping...")
-            }
-            delay(350)
 
             // Register captured page
             val currentCount = _uiState.value.docPageCount
@@ -396,15 +455,7 @@ class ScanViewModel(
                 pageNumber = currentCount,
                 title = "Page $currentCount",
                 filterApplied = _uiState.value.currentDocFilter,
-                imageUri = photoUri
-            )
-
-            // Auto-detected straightened document quad
-            val detectedCorners = listOf(
-                Offset(0.08f, 0.10f), // Top-Left
-                Offset(0.92f, 0.10f), // Top-Right
-                Offset(0.92f, 0.88f), // Bottom-Right
-                Offset(0.08f, 0.88f)  // Bottom-Left
+                imageUri = finalPhotoUri
             )
 
             _uiState.update {
@@ -415,6 +466,7 @@ class ScanViewModel(
                     capturedDocPages = it.capturedDocPages + newPageLabel,
                     capturedPagesList = it.capturedPagesList + newPageData,
                     cropCorners = detectedCorners,
+                    activeCapturedPhotoUri = finalPhotoUri,
                     activeEditorFilter = it.currentDocFilter,
                     activeEditorRotation = 0,
                     currentDestination = ScreenDestination.CROP_EDITOR

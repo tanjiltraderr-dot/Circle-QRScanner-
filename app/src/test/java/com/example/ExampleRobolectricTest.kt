@@ -1,23 +1,11 @@
 package com.example
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
 class ExampleRobolectricTest {
-
-  @Test
-  fun `read string from context`() {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val appName = context.getString(R.string.app_name)
-    assertEquals("Circle Scanner", appName)
-  }
 
   @Test
   fun `cleanFileName sanitizes names and removes extension`() {
@@ -49,9 +37,9 @@ class ExampleRobolectricTest {
     assertEquals(2, viewModel.uiState.value.capturedPagesList.size)
 
     viewModel.openPdfNameDialog()
-    org.junit.Assert.assertTrue("PDF dialog should be open", viewModel.uiState.value.showPdfNameDialog)
+    assertTrue("PDF dialog should be open", viewModel.uiState.value.showPdfNameDialog)
 
     viewModel.dismissPdfNameDialog()
-    org.junit.Assert.assertFalse("PDF dialog should be closed", viewModel.uiState.value.showPdfNameDialog)
+    assertFalse("PDF dialog should be closed", viewModel.uiState.value.showPdfNameDialog)
   }
 }

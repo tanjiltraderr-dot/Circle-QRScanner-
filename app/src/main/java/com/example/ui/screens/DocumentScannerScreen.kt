@@ -137,7 +137,7 @@ fun DocumentScannerScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            viewModel.triggerShutterCapture(photoUri = uri.toString())
+            viewModel.triggerShutterCapture(photoUri = uri.toString(), context = context)
         }
     }
 
@@ -644,17 +644,17 @@ fun DocumentScannerScreen(
                                         ContextCompat.getMainExecutor(context),
                                         object : ImageCapture.OnImageSavedCallback {
                                             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                                viewModel.triggerShutterCapture(photoUri = photoFile.absolutePath)
+                                                viewModel.triggerShutterCapture(photoUri = photoFile.absolutePath, context = context)
                                             }
 
                                             override fun onError(exception: ImageCaptureException) {
                                                 // Graceful fallback to processing simulation
-                                                viewModel.triggerShutterCapture(photoUri = null)
+                                                viewModel.triggerShutterCapture(photoUri = null, context = context)
                                             }
                                         }
                                     )
                                 } else {
-                                    viewModel.triggerShutterCapture(photoUri = null)
+                                    viewModel.triggerShutterCapture(photoUri = null, context = context)
                                 }
                             }
                             .testTag("doc_shutter_button"),
