@@ -177,7 +177,7 @@ fun CropEditorScreen(
                         )
                     )
                     Text(
-                        text = "Page ${uiState.docPageCount - 1} • Auto-Straightened",
+                        text = "Page ${(uiState.docPageCount - 1).coerceAtLeast(1)} • Auto-Straightened",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = AccentGreen,
                             fontSize = 11.sp,

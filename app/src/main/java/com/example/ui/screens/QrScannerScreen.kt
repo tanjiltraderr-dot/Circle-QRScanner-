@@ -938,13 +938,4 @@ fun QrScannerScreen(
             }
         }
     }
-
-    // QR & Barcode Result Bottom Sheet
-    if (uiState.showQrResultSheet && uiState.activeQrResult != null) {
-        QrResultSheet(
-            item = uiState.activeQrResult!!,
-            onDismiss = { viewModel.dismissQrResult() },
-            onSaveToHistory = { viewModel.saveActiveQrResult() }
-        )
-    }
 }

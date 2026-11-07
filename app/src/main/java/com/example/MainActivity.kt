@@ -59,6 +59,7 @@ fun MainAppContent(viewModel: ScanViewModel) {
         when (destination) {
             ScreenDestination.HOME -> HomeScreen(viewModel = viewModel)
             ScreenDestination.QR_SCANNER -> QrScannerScreen(viewModel = viewModel)
+            ScreenDestination.QR_RESULT -> com.example.ui.screens.QrResultScreen(viewModel = viewModel)
             ScreenDestination.DOC_SCANNER -> DocumentScannerScreen(viewModel = viewModel)
             ScreenDestination.CROP_EDITOR -> CropEditorScreen(viewModel = viewModel)
             ScreenDestination.ID_CARD_SCANNER -> IdCardScannerScreen(viewModel = viewModel)

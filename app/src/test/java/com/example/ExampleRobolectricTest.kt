@@ -85,5 +85,23 @@ class ExampleRobolectricTest {
     val options = com.example.util.GoogleDriveScannerHelper.buildScannerOptions()
     org.junit.Assert.assertNotNull(options)
   }
+
+  @Test
+  fun `initial scan history is completely empty without demo data`() {
+    val repo = com.example.data.repository.ScanRepository()
+    assertTrue("Initial scan history must be empty", repo.items.value.isEmpty())
+
+    val categories = com.example.data.repository.ScanRepository.getInitialCategories()
+    assertTrue("All categories should have null badges", categories.all { it.badge == null })
+  }
+
+  @Test
+  fun `barcode detection transitions to full page QR_RESULT destination`() {
+    val viewModel = com.example.ui.viewmodel.ScanViewModel()
+    viewModel.onLiveBarcodeDetected("https://google.com", com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+    assertEquals(com.example.data.model.ScreenDestination.QR_RESULT, viewModel.uiState.value.currentDestination)
+    org.junit.Assert.assertNotNull(viewModel.uiState.value.activeQrResult)
+    assertEquals("https://google.com", viewModel.uiState.value.activeQrResult?.content)
+  }
 }
 

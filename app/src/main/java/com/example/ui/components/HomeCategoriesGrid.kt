@@ -55,13 +55,13 @@ fun HomeCategoriesGrid(
         modifier = modifier
             .fillMaxWidth()
             .background(PureWhite)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
     ) {
         // Section Header: "Quick Categories" on the left, "See All >" on the right
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -140,44 +140,19 @@ fun CategoryGridItem(
     ) {
         // Icon container with soft colored background and subtle border
         Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(54.dp)
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(bgColor)
+                .border(1.dp, iconTint.copy(alpha = 0.12f), RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bgColor)
-                    .border(1.dp, iconTint.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = category.title,
-                    tint = iconTint,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-
-            // Optional mini badge
-            if (category.badge != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .clip(CircleShape)
-                        .background(if (category.badge == "AI" || category.badge == "HOT") Color(0xFFEF4444) else AccentBlue)
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = category.badge,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    )
-                }
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = category.title,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(6.dp))

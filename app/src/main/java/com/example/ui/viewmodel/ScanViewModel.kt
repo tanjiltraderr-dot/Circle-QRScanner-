@@ -319,7 +319,8 @@ class ScanViewModel(
         _uiState.update {
             it.copy(
                 activeQrResult = item,
-                showQrResultSheet = true
+                showQrResultSheet = false,
+                currentDestination = ScreenDestination.QR_RESULT
             )
         }
     }
@@ -340,7 +341,8 @@ class ScanViewModel(
         _uiState.update {
             it.copy(
                 activeQrResult = item,
-                showQrResultSheet = true
+                showQrResultSheet = false,
+                currentDestination = ScreenDestination.QR_RESULT
             )
         }
     }

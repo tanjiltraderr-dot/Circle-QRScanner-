@@ -77,6 +77,7 @@ enum class ScreenDestination {
     DOCUMENTS,
     SETTINGS,
     QR_SCANNER,
+    QR_RESULT,
     DOC_SCANNER,
     CROP_EDITOR,
     ID_CARD_SCANNER,
