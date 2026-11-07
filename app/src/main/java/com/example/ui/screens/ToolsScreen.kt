@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,14 +60,70 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSubtle
 import com.example.ui.viewmodel.ScanViewModel
+import com.example.util.GoogleDriveScannerHelper
+import com.example.util.findActivity
 
 @Composable
 fun ToolsScreen(
     viewModel: ScanViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
+
+    val googleDriveScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        if (activityResult.resultCode == Activity.RESULT_OK) {
+            val gmsResult = GoogleDriveScannerHelper.parseScanResult(
+                activityResult.resultCode,
+                activityResult.data
+            )
+            if (gmsResult != null) {
+                val firstUri = gmsResult.pages?.firstOrNull()?.imageUri?.toString()
+                    ?: gmsResult.pdf?.uri?.toString()
+                if (firstUri != null) {
+                    viewModel.openScannedImageInCropEditor(
+                        imageUri = firstUri,
+                        context = context,
+                        pdfUri = gmsResult.pdf?.uri?.toString(),
+                        pageCount = gmsResult.pdf?.pageCount ?: 1
+                    )
+                } else {
+                    viewModel.handleGoogleDriveScanResult(
+                        context = context,
+                        pdfUri = gmsResult.pdf?.uri,
+                        pageUris = gmsResult.pages?.map { it.imageUri },
+                        pageCount = gmsResult.pdf?.pageCount ?: 1
+                    )
+                }
+            }
+        }
+    }
+
+    val launchGoogleDriveScanner: () -> Unit = {
+        val currentActivity = context.findActivity()
+        if (currentActivity != null) {
+            GoogleDriveScannerHelper.startScan(
+                activity = currentActivity,
+                onIntentSenderReady = { intentSender ->
+                    try {
+                        googleDriveScannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    } catch (e: Exception) {
+                        viewModel.showSnackbar("Unable to launch scanner: ${e.message}")
+                    }
+                },
+                onError = { exc ->
+                    viewModel.showSnackbar("Google Drive Scanner: ${exc.message ?: "Please update Google Play Services"}")
+                }
+            )
+        } else {
+            viewModel.showSnackbar("Please wait, initializing scanner...")
+        }
+    }
 
     BackHandler {
         viewModel.navigateTo(ScreenDestination.HOME)
@@ -122,7 +183,7 @@ fun ToolsScreen(
                 icon = Icons.Filled.Scanner,
                 iconTint = AccentBlue,
                 iconBg = Color(0xFFEFF6FF),
-                onClick = { viewModel.navigateTo(ScreenDestination.DOC_SCANNER) }
+                onClick = { launchGoogleDriveScanner() }
             )
             ToolRowItem(
                 title = "QR Code & Barcode Scanner",
@@ -177,7 +238,7 @@ fun ToolsScreen(
     if (uiState.showQuickScanSheet) {
         QuickScanBottomSheet(
             onDismiss = { viewModel.showQuickScanSheet(false) },
-            onDocScanClick = { viewModel.navigateTo(ScreenDestination.DOC_SCANNER) },
+            onDocScanClick = { launchGoogleDriveScanner() },
             onQrScanClick = { viewModel.navigateTo(ScreenDestination.QR_SCANNER) },
             onIdCardScanClick = { viewModel.navigateTo(ScreenDestination.ID_CARD_SCANNER) },
             onOcrScanClick = { viewModel.navigateTo(ScreenDestination.OCR_SCREEN) }

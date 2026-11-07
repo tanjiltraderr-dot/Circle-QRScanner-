@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
+import android.app.Activity
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +39,8 @@ import com.example.ui.components.QuickScanBottomSheet
 import com.example.ui.components.RecentHistorySection
 import com.example.ui.theme.PureWhite
 import com.example.ui.viewmodel.ScanViewModel
+import com.example.util.GoogleDriveScannerHelper
+import com.example.util.findActivity
 
 @Composable
 fun HomeScreen(
@@ -46,6 +52,62 @@ fun HomeScreen(
     val filteredScans by viewModel.filteredScans.collectAsState()
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Google Drive Document Scanner Launcher:
+    // Directly launches Google Drive scanner when user clicks "Document Scanner" card on Home Screen
+    // Once user crops/scans in Google Drive scanner, the resulting image is passed directly into CropEditorScreen!
+    val googleDriveScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        if (activityResult.resultCode == Activity.RESULT_OK) {
+            val gmsResult = GoogleDriveScannerHelper.parseScanResult(
+                activityResult.resultCode,
+                activityResult.data
+            )
+            if (gmsResult != null) {
+                val firstUri = gmsResult.pages?.firstOrNull()?.imageUri?.toString()
+                    ?: gmsResult.pdf?.uri?.toString()
+                if (firstUri != null) {
+                    viewModel.openScannedImageInCropEditor(
+                        imageUri = firstUri,
+                        context = context,
+                        pdfUri = gmsResult.pdf?.uri?.toString(),
+                        pageCount = gmsResult.pdf?.pageCount ?: 1
+                    )
+                } else {
+                    viewModel.handleGoogleDriveScanResult(
+                        context = context,
+                        pdfUri = gmsResult.pdf?.uri,
+                        pageUris = gmsResult.pages?.map { it.imageUri },
+                        pageCount = gmsResult.pdf?.pageCount ?: 1
+                    )
+                }
+            }
+        }
+    }
+
+    val launchGoogleDriveScanner: () -> Unit = {
+        val currentActivity = context.findActivity()
+        if (currentActivity != null) {
+            GoogleDriveScannerHelper.startScan(
+                activity = currentActivity,
+                onIntentSenderReady = { intentSender ->
+                    try {
+                        googleDriveScannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    } catch (e: Exception) {
+                        viewModel.showSnackbar("Unable to open Google Drive Scanner: ${e.message}")
+                    }
+                },
+                onError = { exc ->
+                    viewModel.showSnackbar("Google Drive Scanner: ${exc.message ?: "Please update Google Play Services"}")
+                }
+            )
+        } else {
+            viewModel.showSnackbar("Please wait, initializing scanner...")
+        }
+    }
 
     LaunchedEffect(uiState.snackbarMessage) {
         uiState.snackbarMessage?.let {
@@ -84,10 +146,11 @@ fun HomeScreen(
                 onProfileClick = { viewModel.showProfileModal(true) }
             )
 
-            // 2. Main Action Banner / Cards: Dual-Card layout (QR Scanner with green badge & Doc Scanner)
+            // 2. Main Action Banner / Cards: Dual-Card layout (QR Scanner & Document Scanner)
+            // Clicking Document Scanner directly opens Google Drive's Scanner and passes cropped image to CropEditorScreen!
             MainBannerCards(
                 onQrScannerClick = { viewModel.navigateTo(ScreenDestination.QR_SCANNER) },
-                onDocScannerClick = { viewModel.navigateTo(ScreenDestination.DOC_SCANNER) }
+                onDocScannerClick = { launchGoogleDriveScanner() }
             )
 
             // 3. Home Categories (Grid View - 2 Rows of 4 Items = 8 Total Categories)
@@ -95,19 +158,16 @@ fun HomeScreen(
                 categories = viewModel.categories,
                 onCategoryClick = { category ->
                     when (category.id) {
-                        "cat_smart_scan" -> viewModel.navigateTo(ScreenDestination.DOC_SCANNER)
+                        "cat_smart_scan" -> launchGoogleDriveScanner()
                         "cat_pdf_tools" -> viewModel.navigateTo(ScreenDestination.PDF_TOOLS)
-                        "cat_import_img" -> {
-                            viewModel.navigateTo(ScreenDestination.DOC_SCANNER)
-                            viewModel.showSnackbar("Photo imported to Document Scanner")
-                        }
+                        "cat_import_img" -> launchGoogleDriveScanner()
                         "cat_import_file" -> {
                             viewModel.navigateTo(ScreenDestination.DOCUMENTS)
                             viewModel.showSnackbar("Showing all imported documents")
                         }
                         "cat_id_card" -> viewModel.navigateTo(ScreenDestination.ID_CARD_SCANNER)
                         "cat_ocr" -> viewModel.navigateTo(ScreenDestination.OCR_SCREEN)
-                        "cat_image_tools" -> viewModel.navigateTo(ScreenDestination.DOC_SCANNER)
+                        "cat_image_tools" -> launchGoogleDriveScanner()
                         "cat_all" -> viewModel.navigateTo(ScreenDestination.TOOLS)
                     }
                 }
@@ -163,7 +223,7 @@ fun HomeScreen(
     if (uiState.showQuickScanSheet) {
         QuickScanBottomSheet(
             onDismiss = { viewModel.showQuickScanSheet(false) },
-            onDocScanClick = { viewModel.navigateTo(ScreenDestination.DOC_SCANNER) },
+            onDocScanClick = { launchGoogleDriveScanner() },
             onQrScanClick = { viewModel.navigateTo(ScreenDestination.QR_SCANNER) },
             onIdCardScanClick = { viewModel.navigateTo(ScreenDestination.ID_CARD_SCANNER) },
             onOcrScanClick = { viewModel.navigateTo(ScreenDestination.OCR_SCREEN) }

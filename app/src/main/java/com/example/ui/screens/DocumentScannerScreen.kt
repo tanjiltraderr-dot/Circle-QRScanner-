@@ -101,6 +101,7 @@ import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate900
 import com.example.ui.viewmodel.ScanViewModel
 import com.example.util.GoogleDriveScannerHelper
+import com.example.util.findActivity
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -110,7 +111,7 @@ fun DocumentScannerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    val activity = context.findActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
     var shutterClicked by remember { mutableStateOf(false) }
@@ -159,7 +160,12 @@ fun DocumentScannerScreen(
                 val firstUri = gmsResult.pages?.firstOrNull()?.imageUri?.toString()
                     ?: gmsResult.pdf?.uri?.toString()
                 if (firstUri != null) {
-                    viewModel.triggerShutterCapture(photoUri = firstUri, context = context)
+                    viewModel.openScannedImageInCropEditor(
+                        imageUri = firstUri,
+                        context = context,
+                        pdfUri = gmsResult.pdf?.uri?.toString(),
+                        pageCount = gmsResult.pdf?.pageCount ?: 1
+                    )
                 } else {
                     viewModel.handleGoogleDriveScanResult(
                         context = context,
@@ -440,12 +446,16 @@ fun DocumentScannerScreen(
                                 GoogleDriveScannerHelper.startScan(
                                     activity = activity,
                                     onIntentSenderReady = { intentSender ->
-                                        googleDriveScannerLauncher.launch(
-                                            IntentSenderRequest.Builder(intentSender).build()
-                                        )
+                                        try {
+                                            googleDriveScannerLauncher.launch(
+                                                IntentSenderRequest.Builder(intentSender).build()
+                                            )
+                                        } catch (e: Exception) {
+                                            viewModel.showSnackbar("Could not open Google Drive Scanner: ${e.message}")
+                                        }
                                     },
-                                    onError = {
-                                        viewModel.showSnackbar("Opening Google Drive Scanner...")
+                                    onError = { exc ->
+                                        viewModel.showSnackbar("Google Drive Scanner: ${exc.message ?: "Google Play Services needed"}")
                                     }
                                 )
                             }

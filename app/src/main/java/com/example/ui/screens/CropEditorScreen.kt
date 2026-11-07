@@ -127,8 +127,14 @@ fun CropEditorScreen(
         isSnappedAnimationActive = true
     }
 
+    val backDestination = if (uiState.previousDestination == ScreenDestination.CROP_EDITOR) {
+        ScreenDestination.HOME
+    } else {
+        uiState.previousDestination
+    }
+
     BackHandler {
-        viewModel.navigateTo(ScreenDestination.DOC_SCANNER)
+        viewModel.navigateTo(backDestination)
     }
 
     Box(
@@ -151,7 +157,7 @@ fun CropEditorScreen(
             ) {
                 // Back / Retake
                 IconButton(
-                    onClick = { viewModel.navigateTo(ScreenDestination.DOC_SCANNER) },
+                    onClick = { viewModel.navigateTo(backDestination) },
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)

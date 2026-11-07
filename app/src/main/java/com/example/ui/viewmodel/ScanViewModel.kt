@@ -33,6 +33,7 @@ import java.util.UUID
 
 data class UiState(
     val currentDestination: ScreenDestination = ScreenDestination.HOME,
+    val previousDestination: ScreenDestination = ScreenDestination.HOME,
     val selectedItem: ScannedItem? = null,
     val searchQuery: String = "",
     val activeFilterTab: String = "All", // "All", "Documents", "QR Codes", "Favorites"
@@ -138,7 +139,12 @@ class ScanViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun navigateTo(destination: ScreenDestination) {
-        _uiState.update { it.copy(currentDestination = destination) }
+        _uiState.update { 
+            it.copy(
+                previousDestination = it.currentDestination,
+                currentDestination = destination
+            ) 
+        }
     }
 
     fun openItemDetail(item: ScannedItem) {
@@ -206,6 +212,78 @@ class ScanViewModel(
 
     fun adjustQrZoom(delta: Float) {
         _uiState.update { it.copy(qrZoomLevel = (it.qrZoomLevel + delta).coerceIn(1.0f, 5.0f)) }
+    }
+
+    fun openScannedImageInCropEditor(
+        imageUri: String,
+        context: Context,
+        pdfUri: String? = null,
+        pageCount: Int = 1
+    ) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isProcessingCapture = true,
+                    processingMessage = "Loading scanned document into Editor...",
+                    activeCapturedPhotoUri = imageUri
+                )
+            }
+
+            // Cache the file locally to internal storage so it is persistent across screens
+            val localPath = withContext(Dispatchers.IO) {
+                try {
+                    val destFile = File(context.cacheDir, "scan_doc_${System.currentTimeMillis()}.jpg")
+                    val parsedUri = android.net.Uri.parse(imageUri)
+                    val inputStream = if (imageUri.startsWith("content://")) {
+                        context.contentResolver.openInputStream(parsedUri)
+                    } else {
+                        File(imageUri).inputStream()
+                    }
+                    inputStream?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    destFile.absolutePath
+                } catch (e: Exception) {
+                    android.util.Log.e("ScanViewModel", "Failed to cache scanned image: ${e.message}")
+                    imageUri
+                }
+            }
+
+            val currentCount = _uiState.value.docPageCount
+            val newPageLabel = "Page $currentCount"
+            val newPageData = CapturedPageData(
+                pageNumber = currentCount,
+                title = "Page $currentCount",
+                filterApplied = "Magic Color",
+                imageUri = localPath
+            )
+
+            // Auto edge bounds for the editor
+            val initialCorners = listOf(
+                Offset(0.04f, 0.04f), // Top-Left
+                Offset(0.96f, 0.04f), // Top-Right
+                Offset(0.96f, 0.96f), // Bottom-Right
+                Offset(0.04f, 0.96f)  // Bottom-Left
+            )
+
+            _uiState.update {
+                it.copy(
+                    isProcessingCapture = false,
+                    isAutoEdgeSnapping = true,
+                    docPageCount = currentCount + 1,
+                    capturedDocPages = it.capturedDocPages + newPageLabel,
+                    capturedPagesList = it.capturedPagesList + newPageData,
+                    cropCorners = initialCorners,
+                    activeCapturedPhotoUri = localPath,
+                    activeEditorFilter = "Magic Color",
+                    activeEditorRotation = 0,
+                    previousDestination = it.currentDestination,
+                    currentDestination = ScreenDestination.CROP_EDITOR
+                )
+            }
+        }
     }
 
     fun handleGoogleDriveScanResult(
