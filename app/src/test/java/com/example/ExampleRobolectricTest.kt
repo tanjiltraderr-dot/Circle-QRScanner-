@@ -102,6 +102,70 @@ class ExampleRobolectricTest {
     assertEquals(com.example.data.model.ScreenDestination.QR_RESULT, viewModel.uiState.value.currentDestination)
     org.junit.Assert.assertNotNull(viewModel.uiState.value.activeQrResult)
     assertEquals("https://google.com", viewModel.uiState.value.activeQrResult?.content)
+    assertEquals(
+        com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE,
+        viewModel.uiState.value.activeQrResult?.barcodeFormat
+    )
+  }
+
+  @Test
+  fun `wifi qr parser extracts name security password in serial order`() {
+    val wifiRaw = "WIFI:T:WPA;P:MySecret\\;Pass;S:Office_5G;;"
+    val parsed = com.example.util.QrPayloadParser.parse(wifiRaw)
+
+    assertEquals(com.example.util.QrPayloadKind.WIFI, parsed.kind)
+    assertEquals(3, parsed.fields.size)
+    assertEquals("Wi-Fi Name", parsed.fields[0].label)
+    assertEquals("Office_5G", parsed.fields[0].value)
+    assertEquals("Security", parsed.fields[1].label)
+    assertEquals("WPA/WPA2", parsed.fields[1].value)
+    assertEquals("Password", parsed.fields[2].label)
+    assertEquals("MySecret;Pass", parsed.fields[2].value)
+    assertEquals("MySecret;Pass", parsed.fields[2].copyValue)
+
+    assertTrue(parsed.formattedCopyAll.contains("Wi-Fi Name: Office_5G"))
+    assertTrue(parsed.formattedCopyAll.contains("Security: WPA/WPA2"))
+    assertTrue(parsed.formattedCopyAll.contains("Password: MySecret;Pass"))
+  }
+
+  @Test
+  fun `vcard visiting card parser extracts serial fields and dial email url targets`() {
+    val vcardRaw = """
+      BEGIN:VCARD
+      VERSION:3.0
+      FN:Tanvir Hasan
+      ORG:Circle Tech Ltd
+      TITLE:Product Lead
+      TEL;TYPE=CELL:+8801711223344
+      EMAIL:tanvir@circletech.com
+      URL:https://circletech.com
+      END:VCARD
+    """.trimIndent()
+
+    val parsed = com.example.util.QrPayloadParser.parse(vcardRaw)
+    assertEquals(com.example.util.QrPayloadKind.VCARD, parsed.kind)
+    assertEquals("Tanvir Hasan", parsed.primaryTitle)
+    assertEquals("+8801711223344", parsed.primaryPhone)
+    assertEquals("tanvir@circletech.com", parsed.primaryEmail)
+    assertEquals("https://circletech.com", parsed.primaryUrl)
+    assertTrue(parsed.fields.any { it.label == "Full Name" && it.value == "Tanvir Hasan" })
+    assertTrue(parsed.fields.any { it.label == "Phone Number" && it.value == "+8801711223344" })
+    assertTrue(parsed.fields.any { it.label == "Email Address" && it.value == "tanvir@circletech.com" })
+  }
+
+  @Test
+  fun `plain text visiting card with phone and email is detected as card`() {
+    val cardText = """
+      Md. Karim
+      Sales Manager
+      Mobile: +8801812345678
+      Email: karim@company.com
+    """.trimIndent()
+
+    val parsed = com.example.util.QrPayloadParser.parse(cardText)
+    assertEquals(com.example.util.QrPayloadKind.VCARD, parsed.kind)
+    assertEquals("+8801812345678", parsed.primaryPhone)
+    assertEquals("karim@company.com", parsed.primaryEmail)
   }
 }
 

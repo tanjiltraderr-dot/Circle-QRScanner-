@@ -93,6 +93,7 @@ dependencies {
   implementation(libs.androidx.camera.view)
   implementation(libs.google.mlkit.barcode)
   implementation(libs.play.services.mlkit.document.scanner)
+  implementation(libs.zxing.core)
 
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)

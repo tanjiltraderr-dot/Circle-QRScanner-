@@ -42,6 +42,7 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 barcodeScanning = "17.3.0"
 playServicesMlkitDocumentScanner = "16.0.0"
+zxingCore = "3.5.4"
 
 
 
@@ -99,6 +100,7 @@ androidx-credentials-play-services = { group = "androidx.credentials", name = "c
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 google-mlkit-barcode = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "barcodeScanning" }
 play-services-mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "playServicesMlkitDocumentScanner" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 
 
 

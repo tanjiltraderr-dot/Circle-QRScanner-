@@ -148,7 +148,24 @@ class ScanViewModel(
     }
 
     fun openItemDetail(item: ScannedItem) {
-        _uiState.update { it.copy(selectedItem = item, currentDestination = ScreenDestination.DOCUMENT_DETAIL) }
+        if (item.type == ScanType.QR_CODE) {
+            _uiState.update {
+                it.copy(
+                    previousDestination = it.currentDestination,
+                    activeQrResult = item,
+                    showQrResultSheet = false,
+                    currentDestination = ScreenDestination.QR_RESULT
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    previousDestination = it.currentDestination,
+                    selectedItem = item,
+                    currentDestination = ScreenDestination.DOCUMENT_DETAIL
+                )
+            }
+        }
     }
 
     fun setSearchQuery(query: String) {
@@ -351,10 +368,9 @@ class ScanViewModel(
         lastScannedTimestamp = now
 
         val timeString = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
-        val isUrl = rawValue.startsWith("http://", ignoreCase = true) || rawValue.startsWith("https://", ignoreCase = true)
-        val isWifi = rawValue.startsWith("WIFI:", ignoreCase = true)
-        val isEmail = rawValue.startsWith("mailto:", ignoreCase = true)
-        val isPhone = rawValue.startsWith("tel:", ignoreCase = true)
+        val is2DMatrix = formatCode == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE ||
+            formatCode == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_AZTEC ||
+            formatCode == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_DATA_MATRIX
 
         val formatName = when (formatCode) {
             com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE -> "QR Code"
@@ -371,26 +387,27 @@ class ScanViewModel(
             else -> "Barcode"
         }
 
-        val type = when {
-            formatCode == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE -> when {
-                isUrl -> "URL"
-                isWifi -> "WIFI"
-                isEmail -> "EMAIL"
-                isPhone -> "PHONE"
-                else -> "TEXT"
-            }
-            else -> "BARCODE"
+        val parsed = com.example.util.QrPayloadParser.parse(rawValue, isBarcode = !is2DMatrix)
+        val type = com.example.util.QrPayloadParser.detectPayloadTypeCode(rawValue, isBarcode = !is2DMatrix)
+
+        val itemTitle = when {
+            type == "URL" -> parsed.primaryTitle
+            type == "WIFI" -> "Wi-Fi: ${parsed.wifiInfo?.ssid ?: parsed.primaryTitle}"
+            type == "VCARD" -> "Card: ${parsed.primaryTitle}"
+            type == "BARCODE" -> "$formatName: ${rawValue.take(28)}"
+            else -> "$formatName: ${parsed.primaryTitle.take(28)}"
         }
 
         val item = ScannedItem(
             id = UUID.randomUUID().toString(),
-            title = if (type == "URL") rawValue else "$formatName: ${rawValue.take(28)}",
+            title = itemTitle,
             type = ScanType.QR_CODE,
             timestamp = "Just now ($timeString)",
             pageCount = 1,
             fileSize = "14 KB",
             content = rawValue,
             qrPayloadType = type,
+            barcodeFormat = formatCode,
             isFavorite = false
         )
 
@@ -398,6 +415,7 @@ class ScanViewModel(
             it.copy(
                 activeQrResult = item,
                 showQrResultSheet = false,
+                previousDestination = ScreenDestination.QR_SCANNER,
                 currentDestination = ScreenDestination.QR_RESULT
             )
         }
@@ -448,9 +466,11 @@ class ScanViewModel(
 
     fun saveActiveQrResult() {
         val result = _uiState.value.activeQrResult ?: return
-        repository.addItem(result)
+        if (repository.getItemById(result.id) == null) {
+            repository.addItem(result)
+            showSnackbar("QR Code saved to History!")
+        }
         _uiState.update { it.copy(showQrResultSheet = false) }
-        showSnackbar("QR Code saved to History!")
     }
 
     fun dismissQrResult() {

@@ -18,7 +18,8 @@ data class ScannedItem(
     val pageCount: Int = 1,
     val fileSize: String = "1.2 MB",
     val content: String = "",
-    val qrPayloadType: String? = null, // e.g. "URL", "WIFI", "TEXT"
+    val qrPayloadType: String? = null, // e.g. "URL", "WIFI", "VCARD", "TEXT"
+    val barcodeFormat: Int? = null,
     val isFavorite: Boolean = false,
     val filterApplied: String = "Magic Color",
     val thumbnailRes: Int? = null,
